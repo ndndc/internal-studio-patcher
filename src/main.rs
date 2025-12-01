@@ -1,8 +1,9 @@
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+mod stagescan_mac;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+mod stagescan_mac_arm;
 #[cfg(target_os = "windows")]
 mod stagescan;
-
-#[cfg(target_os = "macos")]
-mod stagescan_mac;
 
 use std::fs;
 use std::path::PathBuf;
@@ -12,6 +13,7 @@ use std::process::Command;
 
 use std::time::Instant;
 use clap::Parser;
+
 #[cfg(windows)]
 use winreg::{enums::HKEY_CLASSES_ROOT, RegKey};
 
@@ -22,28 +24,46 @@ struct Cli {
     output: Option<PathBuf>,
 }
 
+#[cfg(target_os = "macos")]
+fn codesign(path: &PathBuf) {
+    let status = Command::new("codesign")
+        .arg("--force")
+        .arg("--sign")
+        .arg("-")
+        .arg(path)
+        .status()
+        .expect("Codesign command failed, studio may crash/not work properly due to codesigning failing");
+
+    if !status.success() {
+        eprintln!("Codesign command failed, studio may crash/not work properly due to codesigning failing");
+        std::process::exit(1);
+    }
+}
+
 fn patch(input: Option<PathBuf>, output: &PathBuf) {
     let input_path = input.as_ref().unwrap();
     let input = fs::read(input_path).unwrap();
-    #[cfg(target_os = "macos")]
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        let mut input = input;
+        let now = Instant::now();
+        stagescan_mac_arm::start(&mut input, output);
+        println!("Patched in {:?}. Codesigning", now.elapsed());
+
+        let codesigning_now = Instant::now();
+        codesign(output);
+        println!("Codesigning finished in {:?}.", codesigning_now.elapsed());
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
     {
         let now = Instant::now();
         stagescan_mac::start(input, output);
         println!("Patched in {:?}. Codesigning", now.elapsed());
+
         let codesigning_now = Instant::now();
-        let status = Command::new("codesign")
-        .arg("--force")
-        .arg("--sign")
-        .arg("-")
-        .arg(&output)
-        .status()
-        .expect("Codesign command failed, studio may crash/not work properly due to codesigning failing");
-        if !status.success() {
-            eprintln!(
-            "Codesign command failed, studio may crash/not work properly due to codesigning failing",
-        );
-            std::process::exit(1);
-        }
+        codesign(output);
         println!("Codesigning finished in {:?}.", codesigning_now.elapsed());
     }
 
@@ -67,15 +87,17 @@ fn main() {
     }
     #[cfg(target_os = "windows")]
     {
-        let path: String = RegKey::predef(HKEY_CLASSES_ROOT)
-            .open_subkey("roblox-studio")
-            .unwrap()
-            .open_subkey("DefaultIcon")
-            .unwrap()
-            .get_value("")
-            .unwrap();
+        if input.is_none() {
+            let path: String = RegKey::predef(HKEY_CLASSES_ROOT)
+                .open_subkey("roblox-studio")
+                .unwrap()
+                .open_subkey("DefaultIcon")
+                .unwrap()
+                .get_value("")
+                .unwrap();
 
-        input = input.or_else(|| Some(PathBuf::from(path)));
+            input = input.or_else(|| Some(PathBuf::from(path)));
+        }
     }
     let output = if cfg!(debug_assertions) {
         #[cfg(target_os = "macos")]

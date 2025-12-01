@@ -17,3 +17,7 @@ goblin = "0.9.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.51"
+
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+capstone = "0.13.0"
+capstone-sys = "0.17.0"
