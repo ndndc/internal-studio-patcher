@@ -6,9 +6,7 @@ permissions:
 on:
   push:
     tags:
-      - 'v*'  # run when you push a tag like v1.0.0
-  release:
-    types: [created]
+      - 'v*'
   workflow_dispatch:
 
 env:
@@ -16,7 +14,6 @@ env:
 
 jobs:
   build-and-upload:
-    name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -28,24 +25,17 @@ jobs:
             asset_name: internal-studio-patcher.exe
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Build Release
-        run: cargo build --release --target ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Rename Binary
-        shell: bash
-        run: |
-          cp "target/${{ matrix.target }}/release/${{ env.CRATE_NAME }}${{ matrix.suffix }}" "${{ matrix.asset_name }}"
+      - shell: bash
+        run: cp "target/${{ matrix.target }}/release/${{ env.CRATE_NAME }}${{ matrix.suffix }}" "${{ matrix.asset_name }}"
 
-      - name: Upload Release Asset
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+      - uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.asset_name }}
